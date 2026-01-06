@@ -28,7 +28,7 @@ Sample-wise variant density matrix (TSV)
   ↓
 Interactive Shiny app for visualization and exploration
 
-
+```
 ------------------------------------------------------------
 1. Variant Counting from Pangenome VCF
 ------------------------------------------------------------
