@@ -17,17 +17,17 @@ https://sameerpokhrel.shinyapps.io/shinyapp1kbvariants/
 Workflow Overview
 ------------------------------------------------------------
 
+```
 Pangenome VCF
   ↓
-Variant counting (10 kb / 100 kb windows)
+Variant counting in fixed genomic windows (e.g. 10 kb or 100 kb)
   ↓
-Filtering (>40 variants per kb)
+Filtering of hypervariable regions (>40 variants per kb)
   ↓
-Sample-wise TSV matrix
+Sample-wise variant density matrix (TSV)
   ↓
-Shiny app (visualization & exploration)
+Interactive Shiny app for visualization and exploration
 
-Each step is modular and can be run independently.
 
 ------------------------------------------------------------
 1. Variant Counting from Pangenome VCF
