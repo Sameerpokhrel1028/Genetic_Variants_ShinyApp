@@ -9,6 +9,10 @@ The platform consists of three linked components:
 2) Window-based variant summarization and filtering
 3) Interactive visualization using a Shiny application
 
+The ShinyApp can be found here:
+
+https://sameerpokhrel.shinyapps.io/shinyapp1kbvariants/
+
 ------------------------------------------------------------
 Workflow Overview
 ------------------------------------------------------------
