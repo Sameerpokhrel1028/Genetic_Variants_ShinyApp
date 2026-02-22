@@ -1,4 +1,4 @@
-# Genetic_Variants_ShinyApp
+# Interactive Visualization of Variants from VCF files
 
 ## Quick Start
 
