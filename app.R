@@ -1,81 +1,86 @@
 # ============================================================
-# Peanut-PanMAGIC Variant Density Shiny App
+# Variant Density + Introgression Viewer (TSV only)
 # ============================================================
-# This Shiny app visualizes:
-#  1) Variant density heatmap (variants per kb in 10 kb windows)
-#  2) Genome clustering using a dendrogram and PCA
-#
-# Tabs:
-#  - Variants Heatmap
-#  - Genome Clusters
-#  - About
-#
-# Inputs:
-#  - 10Kbvariants.tsv : variant counts per 10 kb windows (standardized to VarPerKb)
-#  - functions.R      : helper functions used by the app (required)
-#
-# Notes:
-#  - This app assumes you run it from the project directory (the folder that
-#    contains app.R, functions.R, and 10Kbvariants.tsv).
-#  - Avoid using setwd() in Shiny. Instead, open the R project (or set the
-#    working directory in RStudio) to the app folder before running.
-#
-# Install required packages (one-time):
-#   install.packages("shiny")
-#   install.packages("tidyverse")
-#   install.packages("ape")
-#   install.packages("circlize")
-#   install.packages("Cairo")
-#   install.packages("grid")
-#   install.packages("BiocManager")
-#   BiocManager::install("ComplexHeatmap")
-#
-# Run locally:
-#   shiny::runApp()
-#
+# Recommended workflow:
+#   VCF -> scripts/parse_vcf_to_matrix.sh -> TSV -> upload TSV -> plots
 # ============================================================
 
 suppressPackageStartupMessages({
   library(shiny)
-  library(tidyverse)
-  library(ComplexHeatmap)
-  library(circlize)
-  library(Cairo)
-  library(grid)
+  library(dplyr)
+  library(ggplot2)
   library(ape)
+  library(readr)
 })
 
-# Helper functions live in functions.R (keeps main computations out of app.R)
 source("functions.R")
 
-# Input table: variant counts per 10 kb windows (converted to variants per kb)
-# Keep the file in the same directory as app.R
-df <- read_tsv("10Kbvariants.tsv", show_col_types = FALSE)
-
-genomes <- c("Bailey", "C431", "C99R", "CC41", "CC477", "CC812", "Florida07",
-             "GA12Y", "GPNCWS17", "Georganic", "IAC322", "ICG1471", "Lariat",
-             "Marc1", "NC94022", "NMVal.1", "NMVal.2", "TifNV", "York")
-
-chromosomes <- paste0("chr", str_pad(1:20, width = 2, pad = "0"))
-
-# Hypervariable windows filter (e.g., >40 variants/kb) to reduce likely artifacts
-max_per_kb <- 40
-
-# ---------------- UI ----------------
+# Optional demo TSV if present (your repo can include one)
+default_df <- NULL
+if (file.exists("10kbvariants.tsv")) {
+  default_df <- readr::read_tsv("10kbvariants.tsv", show_col_types = FALSE)
+  validate_variant_tsv(default_df)
+}
 
 ui <- fluidPage(
-  titlePanel("Variant Density Heatmap & Genome Clusters"),
+  titlePanel("Variant Density Heatmap & Genome Clusters (Introgression Viewer)"),
+
   tabsetPanel(
+    tabPanel(
+      "Data Upload",
+      sidebarLayout(
+        sidebarPanel(
+          h4("Upload TSV (recommended workflow)"),
+          fileInput("tsv_upload", "Upload variant matrix (TSV)",
+                    accept = c(".tsv", ".txt", ".csv")),
+          tags$p(style="font-size:12px;",
+                 "TSV must have columns: Chrom, Start, End, then sample columns."),
+
+          hr(),
+          h4("Introgression-focused filtering (optional)"),
+          checkboxInput("enable_filter", "Enable hypervariable-window filtering", value = FALSE),
+          selectInput("filter_method", "Filtering method",
+                      choices = c(
+                        "Median across samples (recommended)" = "median",
+                        "Max across samples (strict)" = "max",
+                        "Proportion of samples above cutoff" = "prop"
+                      ),
+                      selected = "median"),
+          sliderInput("max_per_kb", "Cutoff (variants per kb)", min = 5, max = 200, value = 40, step = 5),
+          sliderInput("prop_thresh", "If proportion method: drop if ≥ this fraction exceed cutoff",
+                      min = 0.05, max = 1.00, value = 0.25, step = 0.05),
+
+          hr(),
+          checkboxInput("enable_cap", "Cap extreme values for plotting (keeps windows)", value = FALSE),
+          sliderInput("cap_per_kb", "Cap at (variants per kb)", min = 10, max = 300, value = 100, step = 10),
+
+          hr(),
+          h4("Export"),
+          tags$p(style="font-size:12px;",
+                 "Downloads the current matrix after conversion to variants/kb and after any filtering/capping."),
+          downloadButton("download_processed_tsv", "Download processed TSV")
+        ),
+
+        mainPanel(
+          h4("Current dataset summary"),
+          verbatimTextOutput("data_summary"),
+          tags$hr(),
+          tags$p("Tip: Use 50–100 kb windows for smoother introgression blocks; 10 kb gives finer resolution but more noise.")
+        )
+      )
+    ),
+
     tabPanel(
       "Variants Heatmap",
       sidebarLayout(
         sidebarPanel(
-          selectInput("chrom_AB", "Select Chromosome:",
-                      choices = chromosomes, selected = "chr01"),
-          selectInput("samples_AB", "Select Genomes:", choices = genomes,
-                      selected = genomes[1:4], multiple = TRUE)
+          selectInput("chrom_AB", "Select Chromosome:", choices = character(0)),
+          selectInput("samples_AB", "Select Samples:", choices = character(0),
+                      selected = NULL, multiple = TRUE)
         ),
-        mainPanel(plotOutput("heatmap_AB", height = "800px"))
+        mainPanel(
+          plotOutput("heatmap_AB", height = "800px")
+        )
       )
     ),
 
@@ -84,18 +89,17 @@ ui <- fluidPage(
       sidebarLayout(
         sidebarPanel(
           selectInput("chrom_div", "Select Chromosome:",
-                      choices = c("All chromosomes" = "All", chromosomes),
-                      selected = "All"),
-          selectInput("genomes_div", "Select Genomes:",
-                      choices = c("All genomes" = "All", genomes),
+                      choices = c("All chromosomes" = "All")),
+          selectInput("genomes_div", "Select Samples:",
+                      choices = c("All samples" = "All"),
                       selected = "All", multiple = TRUE),
-          tags$p(style = "color:black; font-size:13px; margin-top:-10px;",
-                 "Select 3 or more genomes for dendrogram and PCA.")
+          tags$p(style="color:black; font-size:13px; margin-top:-10px;",
+                 "Select 3 or more samples for dendrogram and PCA.")
         ),
         mainPanel(
           h4("Dendrogram (Hierarchical Clustering)"),
           plotOutput("div_dendrogram", height = "350px"),
-          h4("PCA of Genome Divergence"),
+          h4("PCA of Sample Divergence"),
           plotOutput("div_pca", height = "400px")
         )
       )
@@ -104,87 +108,185 @@ ui <- fluidPage(
     tabPanel(
       "About",
       h3("About this app"),
-      tags$p(
-        style = "font-size:16px; font-weight:600;",
-        "This Shiny application visualizes variant density and clusters peanut genomes using window-based variant counts."
-      ),
+      tags$p(style="font-size:16px; font-weight:600;",
+             "This Shiny app visualizes window-based, sample-wise variant density to support introgression discovery and clustering."),
       tags$ul(
-        tags$li(strong("Variants Heatmap:"), " Variant density across selected genomes for a selected chromosome."),
-        tags$li(strong("Genome Clusters:"), " Dendrogram and PCA based on similarity of variant density patterns."),
-        tags$li(strong("About:"), " Summary of the app, inputs, and outputs.")
+        tags$li(tags$b("Input: "), "TSV matrix with columns Chrom/Start/End + sample columns (counts per window)."),
+        tags$li(tags$b("Computation: "), "App converts counts to variants/kb using window length, then optionally filters/caps."),
+        tags$li(tags$b("Outputs: "), "Heatmap, dendrogram clustering, and PCA.")
       ),
-      tags$p(
-        "Input: variant counts per 10 kb windows for peanut genomes (standardized to variants per kb). ",
-        "Output: heatmaps, PCA, and dendrograms to visualize genome-wide divergence patterns."
-      )
+      tags$p("Workflow details and the VCF→TSV parser script are on GitHub:"),
+      tags$p(tags$a(
+        href = "https://github.com/Sameerpokhrel1028/Genetic_Variants_ShinyApp",
+        target = "_blank",
+        "Genetic_Variants_ShinyApp (GitHub)"
+      ))
     )
   )
 )
 
-# ---------------- SERVER ----------------
+server <- function(input, output, session) {
 
-server <- function(input, output) {
+  rv <- reactiveValues(df = default_df)
 
-  # Apply hypervariable filter (used for heatmap, dendrogram, and PCA)
-  filtered_df <- reactive({
-    filter_data(df, genomes, max_per_kb)
+  # ---- Load TSV ----
+  observeEvent(input$tsv_upload, {
+    req(input$tsv_upload)
+    newdf <- readr::read_tsv(input$tsv_upload$datapath, show_col_types = FALSE)
+    validate_variant_tsv(newdf)
+    rv$df <- newdf
+    showNotification("TSV loaded successfully.", type = "message")
   })
 
-  # Variant density heatmap
+  # ---- Derived sample names + chromosomes (universal) ----
+  samples_avail <- reactive({
+    req(rv$df)
+    get_sample_cols(rv$df)
+  })
+
+  chroms_avail <- reactive({
+    req(rv$df)
+    sort(unique(rv$df$Chrom))
+  })
+
+  # Update UI dropdowns whenever dataset changes
+  observe({
+    req(rv$df)
+    s <- samples_avail()
+    cset <- chroms_avail()
+
+    updateSelectInput(session, "chrom_AB",
+                      choices = cset,
+                      selected = cset[1])
+
+    updateSelectInput(session, "samples_AB",
+                      choices = s,
+                      selected = head(s, 4))
+
+    updateSelectInput(session, "chrom_div",
+                      choices = c("All" = "All", cset),
+                      selected = "All")
+
+    updateSelectInput(session, "genomes_div",
+                      choices = c("All" = "All", s),
+                      selected = "All")
+  })
+
+  # ---- Processed data: variants/kb + optional filter/cap ----
+  processed_df <- reactive({
+    req(rv$df)
+    df0 <- rv$df
+    g <- get_sample_cols(df0)
+
+    df_kb <- to_var_per_kb(df0, g)
+
+    if (isTRUE(input$enable_filter)) {
+      df_kb <- apply_window_filter(
+        df_kb, g,
+        method = input$filter_method,
+        cutoff = input$max_per_kb,
+        prop_thresh = input$prop_thresh
+      )
+    }
+
+    if (isTRUE(input$enable_cap)) {
+      df_kb <- cap_values(df_kb, g, input$cap_per_kb)
+    }
+
+    df_kb
+  })
+
+  # ---- Download processed TSV ----
+  output$download_processed_tsv <- downloadHandler(
+    filename = function() {
+      ts <- format(Sys.time(), "%Y%m%d_%H%M%S")
+      filt <- if (isTRUE(input$enable_filter)) paste0("filter_", input$filter_method, "_", input$max_per_kb, "perkB") else "nofilter"
+      cap  <- if (isTRUE(input$enable_cap)) paste0("cap_", input$cap_per_kb, "perkB") else "nocap"
+      paste0("variant_density_processed_", filt, "_", cap, "_", ts, ".tsv")
+    },
+    content = function(file) {
+      readr::write_tsv(processed_df(), file)
+    }
+  )
+
+  # ---- Summary ----
+  output$data_summary <- renderPrint({
+    if (is.null(rv$df)) {
+      cat("No dataset loaded yet.\nUpload a TSV generated by the parser script.\n")
+      return()
+    }
+    df0 <- rv$df
+    s <- get_sample_cols(df0)
+    win_bp <- median(pmax(df0$End - df0$Start, 1), na.rm = TRUE)
+
+    cat("Rows (windows):", nrow(df0), "\n")
+    cat("Samples:", length(s), "\n")
+    cat("Chromosomes:", length(unique(df0$Chrom)), "\n")
+    cat("Median window size (bp):", win_bp, "\n")
+    cat("Filtering:", ifelse(isTRUE(input$enable_filter), "ON", "OFF"), "\n")
+    if (isTRUE(input$enable_filter)) {
+      cat("  Method:", input$filter_method, "\n")
+      cat("  Cutoff (var/kb):", input$max_per_kb, "\n")
+      if (input$filter_method == "prop") cat("  Prop threshold:", input$prop_thresh, "\n")
+    }
+    cat("Capping:", ifelse(isTRUE(input$enable_cap), "ON", "OFF"), "\n")
+    if (isTRUE(input$enable_cap)) cat("  Cap (var/kb):", input$cap_per_kb, "\n")
+  })
+
+  # ---- Heatmap ----
   output$heatmap_AB <- renderPlot({
-    chr_data_kb <- filtered_df() %>% filter(Chrom == input$chrom_AB)
-    draw_heatmap(chr_data_kb, input$samples_AB)
+    req(rv$df)
+    req(input$chrom_AB)
+    req(input$samples_AB)
+
+    chr_data <- processed_df() %>% filter(Chrom == input$chrom_AB)
+    draw_heatmap(chr_data, input$samples_AB)
   })
 
-  # Divergence calculation (using filtered data)
+  # ---- Divergence + clustering ----
   calc_divergence <- reactive({
-    selected_genomes <- if ("All" %in% input$genomes_div || length(input$genomes_div) == 0) genomes else input$genomes_div
-    chr_scope <- if (input$chrom_div == "All" || input$chrom_div == "") chromosomes else input$chrom_div
+    req(rv$df)
+    df_kb <- processed_df()
 
-    filtered_data <- filtered_df() %>%
-      filter(Chrom %in% chr_scope)
+    s_all <- get_sample_cols(df_kb)
+    selected <- if ("All" %in% input$genomes_div || length(input$genomes_div) == 0) s_all else input$genomes_div
+    chr_scope <- if (input$chrom_div == "All" || input$chrom_div == "") chroms_avail() else input$chrom_div
 
-    compute_divergence(filtered_data, selected_genomes)
+    df_sub <- df_kb %>% filter(Chrom %in% chr_scope)
+    compute_divergence(df_sub, selected)
   })
 
-  # Dendrogram
   output$div_dendrogram <- renderPlot({
     div <- calc_divergence()
-    if (nrow(div) < 2) {
+    if (nrow(div) < 3) {
       plot.new()
-      text(0.5, 0.5, "Select at least 3 genomes for clustering", cex = 1.2)
+      text(0.5, 0.5, "Select at least 3 samples for clustering", cex = 1.2)
       return()
     }
     tree <- hclust(as.dist(div))
-    plot(tree, main = "Genome Divergence Clustering (Dendrogram)", xlab = "", sub = "")
+    plot(tree, main = "Sample Divergence Clustering (Dendrogram)", xlab = "", sub = "")
   })
 
-  # PCA
   output$div_pca <- renderPlot({
     div <- calc_divergence()
-    if (nrow(div) < 2) {
+    if (nrow(div) < 3) {
       plot.new()
-      text(0.5, 0.5, "Select at least 3 genomes for PCA", cex = 1.2)
+      text(0.5, 0.5, "Select at least 3 samples for PCA", cex = 1.2)
       return()
     }
     pca <- cmdscale(as.dist(div), eig = TRUE, k = 2)
     pca_df <- data.frame(
-      Genome = rownames(div),
+      Sample = rownames(div),
       PC1 = pca$points[, 1],
       PC2 = pca$points[, 2]
     )
 
-    ggplot(pca_df, aes(x = PC1, y = PC2, label = Genome)) +
-      geom_point(color = "blue", size = 3) +
-      geom_text(vjust = -1, size = 4) +
-      labs(title = "Genome Divergence PCA Plot",
-           x = "PC1", y = "PC2") +
+    ggplot(pca_df, aes(x = PC1, y = PC2, label = Sample)) +
+      geom_point(size = 3) +
+      geom_text(vjust = -0.9, size = 4) +
+      labs(title = "Sample Divergence PCA", x = "PC1", y = "PC2") +
       theme_minimal()
   })
 }
 
 shinyApp(ui = ui, server = server)
-
-# Deployment note:
-# Keep rsconnect tokens/secrets out of public repos. If you deploy, do it locally
-# and use environment variables or .Renviron (ignored by git) for credentials.
