@@ -19,7 +19,7 @@ bash scripts/parse_vcf_to_matrix.sh -v my.vcf.gz -o my_10kb.tsv
 
 ### 3. Open the hosted Shiny application
 
-[https://your-shiny-link-here](https://sameerpokhrel.shinyapps.io/rshinyappvariantsobservations/)
+(https://sameerpokhrel.shinyapps.io/rshinyappvariantsobservations/)
 
 Upload `my_10kb.tsv` and begin exploring genome-wide patterns.
 
