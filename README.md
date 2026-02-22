@@ -1,131 +1,192 @@
-# Peanut-PanMAGIC Variant Density Platform
+# Genetic_Variants_ShinyApp
 
-This repository provides an end-to-end workflow for exploring genome-wide
-variant density and divergence patterns across peanut genomes derived from
-a pangenome analysis.
+## Quick Start
 
-The platform consists of three linked components:
-1) Variant extraction from a pangenome VCF
-2) Window-based variant summarization and filtering
-3) Interactive visualization using a Shiny application
+This workflow allows you to explore **genome-wide variant density and divergence patterns** from a multi-sample VCF file.
 
-The ShinyApp can be found here:
+### 1. Clone the repository
 
-https://sameerpokhrel.shinyapps.io/shinyapp1kbvariants/
+```bash
+git clone https://github.com/Sameerpokhrel1028/Genetic_Variants_ShinyApp.git
+cd Genetic_Variants_ShinyApp
+```
 
-------------------------------------------------------------
-Workflow Overview
-------------------------------------------------------------
+### 2. Generate a window-based variant matrix (TSV)
+
+```bash
+bash scripts/parse_vcf_to_matrix.sh -v my.vcf.gz -o my_10kb.tsv
+```
+
+### 3. Open the hosted Shiny application
+
+https://your-shiny-link-here
+
+Upload `my_10kb.tsv` and begin exploring genome-wide patterns.
+
+---
+
+## Workflow Overview
 
 ```
 Pangenome VCF
-  ↓
+    ↓
 Variant counting in fixed genomic windows (e.g. 10 kb or 100 kb)
-  ↓
-Filtering of hypervariable regions (>40 variants per kb)
-  ↓
+    ↓
 Sample-wise variant density matrix (TSV)
-  ↓
+    ↓
 Interactive Shiny app for visualization and exploration
+```
+
+This workflow enables structured, scalable exploration of genome-wide variant density and divergence patterns across multiple samples or assemblies.
+
+---
+
+# Step 1: Generate the Window-Based Variant Matrix
+
+The parsing script:
 
 ```
-------------------------------------------------------------
-1. Variant Counting from Pangenome VCF
-------------------------------------------------------------
+scripts/parse_vcf_to_matrix.sh
+```
 
-Input:
-- Multi-sample pangenome VCF
-  e.g. peanutpan.vcf.phased.gz
+Converts a multi-sample VCF into a fixed-window variant count matrix.
 
-Script:
-- scripts/parse_vcf_to_10kb_matrix.sh
+For each sample, the script counts **non-reference genotypes per window**.
 
-What this script does:
-- Extracts non-reference variants for each genome
-- Bins variants into fixed genomic windows (default: 10 kb)
-- Generates a wide matrix of variant counts per window per sample
+A genotype is counted if it contains any ALT allele:
 
-Output:
-- samplewise_variant_matrix_10kb.tsv
+```
+0/1, 1/1, 0|1, 1|0, 1/2, 2/2, etc.
+```
 
-This step is intended to be run on an HPC system or workstation
-with bcftools and bedtools installed.
+Genotypes `0/0` and `./.` are ignored.
 
-------------------------------------------------------------
-2. Filtering and Normalization
-------------------------------------------------------------
+### Output format
 
-Hypervariable windows (>40 variants per kb), which often reflect
-repetitive regions or mapping artifacts, are filtered downstream.
+```
+Chrom   Start   End   Sample1   Sample2   Sample3 ...
+```
 
-Filtering and normalization (variants per kb) are performed within
-the Shiny application to keep preprocessing lightweight and flexible.
+This TSV file is the direct input for the Shiny application.
 
-------------------------------------------------------------
-3. Interactive Visualization (Shiny App)
-------------------------------------------------------------
+---
 
-App files:
-- shiny_app/app.R
-- shiny_app/functions.R
+## Requirements
 
-Input file:
-- TSV matrix generated from the variant parsing step
-  e.g. samplewise_variant_matrix_10kb.tsv
+The parsing step requires:
 
-What users can do in the app:
-- Select chromosome (chr01–chr20)
-- Select one or multiple genomes
-- Visualize genome-wide variant density
-- Explore genome divergence using dendrograms and PCA
+- bcftools  
+- bedtools  
 
-------------------------------------------------------------
-Live Application
-------------------------------------------------------------
+On HPC systems, you may need:
 
-The interactive Shiny application is publicly available at:
+```bash
+module load BCFtools
+module load BEDTools
+```
 
-https://sameerpokhrel.shinyapps.io/shinyapp1kbvariants/
+For best performance, index compressed VCFs:
 
-No local installation is required to explore the results.
+```bash
+tabix -p vcf my.vcf.gz
+```
 
-------------------------------------------------------------
-About This App
-------------------------------------------------------------
+---
 
-This Shiny application visualizes variant density and clusters genotypes
-for a peanut 16-way MAGIC population developed in the Ozias-Akins lab
-at the University of Georgia.
+## Usage
 
-Tabs in the app:
+### Basic command
 
-- Variants Heatmap
-  Shows variant-density heatmaps for chromosomes 1–20 across
-  selected peanut genomes.
+```bash
+bash scripts/parse_vcf_to_matrix.sh -v input.vcf.gz -o output.tsv
+```
 
-- Genome Clusters
-  Displays genome divergence using hierarchical clustering
-  (dendrogram) and principal component analysis (PCA).
+### Required arguments
 
-- About
-  Describes the purpose of the app, input data, and outputs.
+- `-v` Input multi-sample VCF (bgzipped `.vcf.gz` recommended)  
+- `-o` Output TSV file  
 
-Input:
-- Variant counts per 10 kb windows for 18 peanut genomes derived
-  from a pangenome VCF.
+### Optional arguments
 
-Output:
-- Variant-density heatmaps
-- PCA plots
-- Dendrograms for identifying divergence patterns and potential
-  introgressed genomic regions.
+- `-w` Window size in base pairs (default: 10000)  
+- `-t` Threads for bcftools (default: 4)  
+- `-h` Show help  
 
-------------------------------------------------------------
-Notes
-------------------------------------------------------------
+---
 
-- This repository contains scripts and documentation only
-- Raw VCFs and large intermediate files are not included
-- Window size (10 kb, 100 kb, etc.) can be modified in the parsing script
-- Variant parsing and visualization are intentionally separated
-  for performance, clarity, and reuse
+## Example Commands
+
+Create a 10 kb matrix:
+
+```bash
+bash scripts/parse_vcf_to_matrix.sh -v my.vcf.gz -o my_10kb.tsv
+```
+
+Create a 100 kb matrix using 16 threads:
+
+```bash
+bash scripts/parse_vcf_to_matrix.sh -v my.vcf.gz -w 100000 -t 16 -o my_100kb.tsv
+```
+
+Window size controls resolution:
+
+- Smaller windows provide fine-scale detail  
+- Larger windows smooth variation and reduce runtime  
+
+---
+
+# Step 2: Visualize in the Shiny App (Recommended)
+
+Most users should use the hosted Shiny application.
+
+Open:
+
+https://your-shiny-link-here
+
+Upload the generated TSV file.
+
+The Shiny app provides:
+
+- Genome-wide and chromosome-level variant density heatmaps  
+- Dynamic chromosome and sample selection  
+- Hierarchical clustering based on window profiles  
+- PCA visualization with percent variance explained  
+
+No local R installation is required when using the hosted version.
+
+---
+
+# Running the Shiny App Locally (Optional)
+
+Advanced users may run the app locally.
+
+Install required R packages:
+
+```r
+install.packages(c("shiny", "dplyr", "readr", "ggplot2"))
+install.packages("ComplexHeatmap")
+install.packages("circlize")
+```
+
+Launch the app:
+
+```r
+library(shiny)
+runApp("app.R")
+```
+
+Running locally allows modification of visualization settings or integration into larger workflows.
+
+---
+
+# Repository Structure
+
+```
+Genetic_Variants_ShinyApp/
+├── app.R
+├── functions.R
+├── README.md
+├── scripts/
+│   └── parse_vcf_to_matrix.sh
+└── 10kbvariants.tsv
+```
