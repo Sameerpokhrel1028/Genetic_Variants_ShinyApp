@@ -141,7 +141,7 @@ Most users should use the hosted Shiny application.
 
 Open:
 
-https://your-shiny-link-here
+https://sameerpokhrel.shinyapps.io/rshinyappvariantsobservations/
 
 Upload the generated TSV file.
 
