@@ -11,12 +11,13 @@ Required:
 
 Optional:
   -w   window size in bp (default: 10000 = 10 kb)
-  -t   threads for bcftools (default: 4)
+  -t   threads for bcftools when supported (default: 4)
+       NOTE: bcftools query may not support --threads in some builds.
 
 What it counts:
   - For each sample, counts NON-REFERENCE genotypes per window.
     GT contains any ALT allele: 0/1, 1/1, 0|1, 1|0, 1/2, 2/2, etc.
-    Ignores 0/0 and ./.
+    Ignores 0/0 and ./. (and missing/blank GT)
 
 Output format:
   Chrom   Start   End   Sample1   Sample2   ...
@@ -72,51 +73,76 @@ if [[ "$VCF" == *.gz ]]; then
   fi
 fi
 
+WORKDIR="$(mktemp -d -p . parse_vcf_to_matrix.XXXXXX)"
+cleanup() { rm -rf "$WORKDIR"; }
+trap cleanup EXIT
+
+CONTIGS="$WORKDIR/contigs.genome"
+WINDOWS="$WORKDIR/genome_windows.bed"
+SAMPLES="$WORKDIR/sample_list.txt"
+COUNTS_LIST="$WORKDIR/counts_files.txt"
+
 echo "[1/6] Extract contig lengths from VCF header..."
 bcftools view -h "$VCF" \
-  | awk -F'[=,]' '
+  | awk -F'[=,<>]' '
       /^##contig=/{
         id=""; len="";
         for(i=1;i<=NF;i++){
-          if($i=="ID"){id=$(i+1)}
-          if($i=="length"){len=$(i+1)}
+          if($i=="ID")     id=$(i+1);
+          if($i=="length") len=$(i+1);
         }
-        if(id!="" && len!=""){print id"\t"len}
-      }' \
-  > contigs.genome
+        if(id!="" && len ~ /^[0-9]+$/) print id "\t" len;
+      }' > "$CONTIGS"
+
+if [[ ! -s "$CONTIGS" ]]; then
+  echo "ERROR: contigs.genome is empty. Failed to parse contig lengths from VCF header." >&2
+  echo "       Your VCF should contain lines like: ##contig=<ID=chr01,length=12345>" >&2
+  echo "       Debug tip: bcftools view -h \"$VCF\" | grep '^##contig' | head" >&2
+  exit 1
+fi
+
+echo "      Parsed contigs: $(wc -l < "$CONTIGS")"
+echo "      Example: $(head -n 1 "$CONTIGS")"
 
 echo "[2/6] Create windows (w=${WINDOW_SIZE} bp)..."
-bedtools makewindows -g contigs.genome -w "$WINDOW_SIZE" > genome_windows.bed
+bedtools makewindows -g "$CONTIGS" -w "$WINDOW_SIZE" > "$WINDOWS"
 
 echo "[3/6] Sample list..."
-bcftools query -l "$VCF" > sample_list.txt
+bcftools query -l "$VCF" > "$SAMPLES"
+
+if [[ ! -s "$SAMPLES" ]]; then
+  echo "ERROR: No samples found in VCF: $VCF" >&2
+  exit 1
+fi
 
 echo "[4/6] Count per-sample non-ref variants per window..."
-rm -f counts_files.txt
+: > "$COUNTS_LIST"
+
 while read -r SAMPLE; do
   echo "  - $SAMPLE"
 
-  bcftools query --threads "$THREADS" -s "$SAMPLE" -f '%CHROM\t%POS\t[%GT]\n' "$VCF" \
-    | awk '$3 ~ /(^|[\/|])[1-9]/ {print $1, $2-1, $2}' OFS="\t" \
-    > "${SAMPLE}.bed"
+  SAMPLE_BED="$WORKDIR/${SAMPLE}.bed"
+  SAMPLE_COUNTS="$WORKDIR/${SAMPLE}_counts.tsv"
 
-  bedtools coverage -a genome_windows.bed -b "${SAMPLE}.bed" -counts \
-    | cut -f4 > "${SAMPLE}_counts.tsv"
+  # NOTE: Some bcftools builds do NOT support --threads for `bcftools query`.
+  bcftools query -s "$SAMPLE" -f '%CHROM\t%POS\t[%GT]\n' "$VCF" \
+    | awk '($3 ~ /(^|[\/|])[1-9]/) {print $1, $2-1, $2}' OFS="\t" \
+    > "$SAMPLE_BED"
 
-  echo "${SAMPLE}_counts.tsv" >> counts_files.txt
-  rm -f "${SAMPLE}.bed"
-done < sample_list.txt
+  bedtools coverage -a "$WINDOWS" -b "$SAMPLE_BED" -counts \
+    | cut -f4 > "$SAMPLE_COUNTS"
+
+  echo "$SAMPLE_COUNTS" >> "$COUNTS_LIST"
+done < "$SAMPLES"
 
 echo "[5/6] Assemble TSV matrix..."
 {
   printf "Chrom\tStart\tEnd"
-  while read -r SAMPLE; do printf "\t%s" "$SAMPLE"; done < sample_list.txt
+  while read -r SAMPLE; do printf "\t%s" "$SAMPLE"; done < "$SAMPLES"
   printf "\n"
 } > "$OUT"
 
-paste genome_windows.bed $(cat counts_files.txt) >> "$OUT"
+paste "$WINDOWS" $(cat "$COUNTS_LIST") >> "$OUT"
 
-echo "[6/6] Cleanup..."
-rm -f contigs.genome genome_windows.bed sample_list.txt counts_files.txt *_counts.tsv
-
-echo "Done: $OUT"
+echo "[6/6] Done."
+echo "Output: $OUT"
