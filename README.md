@@ -1,8 +1,16 @@
-# Interactive Visualization of Variants from VCF files
+# Interactive Visualization of Variants from VCF Files
+
+This workflow enables genome-wide exploration of:
+
+- Window-based variant density
+- IBS-derived genetic distance (1-IBS)
+- Genome-wide and chromosome-level divergence patterns
+- Interactive clustering and PCA visualization
+
+It converts a multi-sample VCF into structured matrices for scalable analysis and visualization.
+
 
 ## Quick Start
-
-This workflow allows you to explore **genome-wide variant density and divergence patterns** from a multi-sample VCF file.
 
 ### 1. Clone the repository
 
@@ -11,175 +19,174 @@ git clone https://github.com/Sameerpokhrel1028/Genetic_Variants_ShinyApp.git
 cd Genetic_Variants_ShinyApp
 ```
 
-### 2. Generate a window-based variant matrix (TSV)
+### 2. Generate a Window-Based Variant Matrix (Variant Density)
+
+Counts non-reference genotypes per genomic window (default: 10 kb).
 
 ```bash
 bash scripts/parse_vcf_to_matrix.sh -v my.vcf.gz -o my_10kb.tsv
 ```
 
-### 3. Open the hosted Shiny application
+Optional: change resolution and threads
 
-(https://sameerpokhrel.shinyapps.io/rshinyappvariantsobservations/)
+```bash
+bash scripts/parse_vcf_to_matrix.sh -v my.vcf.gz -w 100000 -t 16 -o my_100kb.tsv
+```
 
-Upload `my_10kb.tsv` and begin exploring genome-wide patterns.
+### 3. Compute IBS-Derived Genetic Distance (1-IBS)
 
----
+Computes genome-wide and per-chromosome genetic distance using PLINK.
+
+```bash
+bash scripts/compute_ibs_chromosomes.sh \
+  --vcf my.vcf.gz \
+  --out ibs_scope.tsv
+```
+
+Optional parameters:
+
+- `--max-miss 0.20`  Maximum allowed missingness (default: 0.20)
+- `--memory 16000`   PLINK memory in MB
+
+Output format:
+
+```
+Scope   Sample1   Sample2   Distance
+```
+
+Where:
+
+- `Scope` = Genome or chromosome ID (chr01, chr02, etc.)
+- `Distance` = 1 - IBS
+
+
+### 4. Open the Hosted Shiny Application
+
+https://sameerpokhrel.shinyapps.io/rshinyappvariantsobservations/
+
+Upload:
+
+- The window-based variant matrix (e.g., `my_10kb.tsv`)
+- The IBS distance file (`ibs_scope.tsv`)
+
 
 ## Workflow Overview
 
 ```
-Pangenome VCF
-    ↓
-Variant counting in fixed genomic windows (e.g. 10 kb or 100 kb)
-    ↓
-Sample-wise variant density matrix (TSV)
-    ↓
-Interactive Shiny app for visualization and exploration
+Multi-sample VCF
+        ↓
+(1) Window-based non-reference genotype counts
+        ↓
+Variant Density Matrix (TSV)
+        ↓
+Heatmaps and clustering in Shiny
+
+AND
+
+Multi-sample VCF
+        ↓
+Biallelic SNP filtering + missingness filter
+        ↓
+PLINK IBS computation
+        ↓
+1-IBS distance (Genome + Chromosome)
+        ↓
+Hierarchical clustering and PCA
 ```
 
-This workflow enables structured, scalable exploration of genome-wide variant density and divergence patterns across multiple samples or assemblies.
 
----
+## Variant Density Module
 
-# Step 1: Generate the Window-Based Variant Matrix
-
-The parsing script:
+Script:
 
 ```
 scripts/parse_vcf_to_matrix.sh
 ```
 
-Converts a multi-sample VCF into a fixed-window variant count matrix.
-
-For each sample, the script counts **non-reference genotypes per window**.
-
-A genotype is counted if it contains any ALT allele:
+For each sample and each genomic window, counts genotypes containing any ALT allele:
 
 ```
 0/1, 1/1, 0|1, 1|0, 1/2, 2/2, etc.
 ```
 
-Genotypes `0/0` and `./.` are ignored.
-
-### Output format
+Ignored genotypes:
 
 ```
-Chrom   Start   End   Sample1   Sample2   Sample3 ...
+0/0
+./.
 ```
 
-This TSV file is the direct input for the Shiny application.
+Output format:
 
----
+```
+Chrom   Start   End   Sample1   Sample2   ...
+```
+
+
+## Identity Distance (1-IBS) Module
+
+Script:
+
+```
+scripts/compute_ibs_chromosomes.sh
+```
+
+Processing steps:
+
+1. Filter to biallelic SNPs
+2. Remove SNPs exceeding missingness threshold
+3. Compute IBS using PLINK
+4. Convert similarity to genetic distance (1 - IBS)
+
+Output (long format):
+
+```
+Scope   Sample1   Sample2   Distance
+```
+
+Includes:
+
+- Genome-wide distance
+- Per-chromosome distance
+
 
 ## Requirements
 
-The parsing step requires:
+### Variant Density
 
-- bcftools  
-- bedtools  
+- bcftools
+- bedtools
 
-On HPC systems, you may need:
+On HPC systems:
 
 ```bash
 module load BCFtools
 module load BEDTools
 ```
 
-For best performance, index compressed VCFs:
+Recommended:
 
 ```bash
 tabix -p vcf my.vcf.gz
 ```
 
----
 
-## Usage
+### IBS Distance
 
-### Basic command
+- bcftools
+- plink (1.9 recommended)
+- python3
+- gunzip
 
-```bash
-bash scripts/parse_vcf_to_matrix.sh -v input.vcf.gz -o output.tsv
-```
-
-### Required arguments
-
-- `-v` Input multi-sample VCF (bgzipped `.vcf.gz` recommended)  
-- `-o` Output TSV file  
-
-### Optional arguments
-
-- `-w` Window size in base pairs (default: 10000)  
-- `-t` Threads for bcftools (default: 4)  
-- `-h` Show help  
-
----
-
-## Example Commands
-
-Create a 10 kb matrix:
+On HPC systems:
 
 ```bash
-bash scripts/parse_vcf_to_matrix.sh -v my.vcf.gz -o my_10kb.tsv
+module load BCFtools
+module load PLINK
 ```
 
-Create a 100 kb matrix using 16 threads:
 
-```bash
-bash scripts/parse_vcf_to_matrix.sh -v my.vcf.gz -w 100000 -t 16 -o my_100kb.tsv
-```
-
-Window size controls resolution:
-
-- Smaller windows provide fine-scale detail  
-- Larger windows smooth variation and reduce runtime  
-
----
-
-# Step 2: Visualize in the Shiny App (Recommended)
-
-Most users should use the hosted Shiny application.
-
-Open:
-
-https://sameerpokhrel.shinyapps.io/rshinyappvariantsobservations/
-
-Upload the generated TSV file.
-
-The Shiny app provides:
-
-- Genome-wide and chromosome-level variant density heatmaps  
-- Dynamic chromosome and sample selection  
-- Hierarchical clustering based on window profiles  
-- PCA visualization with percent variance explained  
-
-No local R installation is required when using the hosted version.
-
----
-
-# Running the Shiny App Locally (Optional)
-
-Advanced users may run the app locally.
-
-Install required R packages:
-
-```r
-install.packages(c("shiny", "dplyr", "readr", "ggplot2"))
-install.packages("ComplexHeatmap")
-install.packages("circlize")
-```
-
-Launch the app:
-
-```r
-library(shiny)
-runApp("app.R")
-```
-
-Running locally allows modification of visualization settings or integration into larger workflows.
-
----
-
-# Repository Structure
+## Repository Structure
 
 ```
 Genetic_Variants_ShinyApp/
@@ -187,6 +194,6 @@ Genetic_Variants_ShinyApp/
 ├── functions.R
 ├── README.md
 ├── scripts/
-│   └── parse_vcf_to_matrix.sh
-└── 10kbvariants.tsv
+│   ├── parse_vcf_to_matrix.sh
+│   └── compute_ibs_chromosomes.sh
 ```
