@@ -12,6 +12,32 @@ It converts a multi-sample VCF into structured matrices for scalable analysis an
 
 ## Quick Start
 
+### 0. Load Required Modules / Software
+
+The workflow requires:
+
+- bcftools
+- bedtools
+- plink (for IBS distance)
+- python3
+- tabix (recommended for indexed VCFs)
+
+On HPC systems:
+
+```bash
+module load BCFtools
+module load BEDTools
+module load PLINK
+```
+
+Make sure your VCF is indexed:
+
+```bash
+tabix -p vcf my.vcf.gz
+```
+
+---
+
 ### 1. Clone the repository
 
 ```bash
