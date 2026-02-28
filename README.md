@@ -211,5 +211,3 @@ module load BCFtools
 module load PLINK
 ```
 
-│   └── compute_ibs_chromosomes.sh
-```
