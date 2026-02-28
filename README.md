@@ -211,15 +211,5 @@ module load BCFtools
 module load PLINK
 ```
 
-
-## Repository Structure
-
-```
-Genetic_Variants_ShinyApp/
-├── app.R
-├── functions.R
-├── README.md
-├── scripts/
-│   ├── parse_vcf_to_matrix.sh
 │   └── compute_ibs_chromosomes.sh
 ```
