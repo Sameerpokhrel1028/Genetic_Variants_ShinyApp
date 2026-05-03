@@ -114,7 +114,7 @@ Distance definition:
 
 Hosted App:
 
-https://sameerpokhrel.shinyapps.io/rshinyappvariantsobservations/
+https://sameerpokhrel.shinyapps.io/RshinyAppVariantDensityAndGenomeCluster/
 
 Upload:
 
@@ -123,7 +123,7 @@ Upload:
 
 ---
 
-# 🔬 Workflow Overview
+#  Workflow Overview
 
     Multi-sample VCF
             ↓
